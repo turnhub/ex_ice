@@ -2314,10 +2314,24 @@ defmodule ExICE.Priv.ICEAgent do
         # TODO calculate correct prio and foundation
         local_cand = conn_check_local_cand
 
+        # For relay candidates, base_address is the TURN-allocated address,
+        # which is not in local_preferences (only socket-bound addresses are).
+        # Use the underlying socket address for the priority lookup, matching
+        # the same special-case in send_binding_request/4.
+        priority_base_address =
+          if local_cand.base.type == :relay do
+            {:ok, {sock_addr, _sock_port}} =
+              ice_agent.transport_module.sockname(local_cand.base.socket)
+
+            sock_addr
+          else
+            local_cand.base.base_address
+          end
+
         priority =
           Candidate.priority!(
             ice_agent.local_preferences,
-            local_cand.base.base_address,
+            priority_base_address,
             :prflx,
             local_cand.base.tcp_type
           )

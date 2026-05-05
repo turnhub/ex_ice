@@ -3021,6 +3021,114 @@ defmodule ExICE.Priv.ICEAgentTest do
     assert <<_channel_number::16, _len::16, "somedata">> = packet
   end
 
+  test "relay connection with prflx-discovered local candidate" do
+    # Regression: a binding success response on a relay path whose XOR-MAPPED
+    # address is unknown (i.e. doesn't match any existing local candidate)
+    # forces creation of a peer-reflexive local candidate with the relay as
+    # its base. Computing the prflx priority used to crash with a KeyError
+    # because the relay candidate's base_address (the TURN-allocated address)
+    # is not registered in local_preferences — only socket-bound host
+    # addresses are.
+
+    remote_cand_ip = @remote_cand.address
+    remote_cand_port = @remote_cand.port
+
+    ice_agent =
+      ICEAgent.new(
+        controlling_process: self(),
+        role: :controlling,
+        if_discovery_module: IfDiscovery.MockSingle,
+        transport_module: Transport.Mock,
+        ice_servers: [
+          %{
+            urls: "turn:#{@turn_ip_str}:#{@turn_port}?transport=udp",
+            username: @turn_username,
+            credential: @turn_password
+          }
+        ],
+        ice_transport_policy: :relay
+      )
+      |> ICEAgent.set_remote_credentials("someufrag", "somepwd")
+      |> ICEAgent.gather_candidates()
+      |> ICEAgent.add_remote_candidate(@remote_cand)
+
+    [socket] = ice_agent.sockets
+
+    # allocate the TURN relay
+    ice_agent = ICEAgent.handle_ta_timeout(ice_agent)
+    req = read_allocate_request(socket)
+    resp = allocate_error_response(req.transaction_id)
+    ice_agent = ICEAgent.handle_udp(ice_agent, socket, @turn_ip, @turn_port, resp)
+    req = read_allocate_request(socket)
+    resp = allocate_success_response(req.transaction_id, ice_agent.transport_module, socket)
+    ice_agent = ICEAgent.handle_udp(ice_agent, socket, @turn_ip, @turn_port, resp)
+
+    # drive create-permission
+    ice_agent = ICEAgent.handle_ta_timeout(ice_agent)
+    assert packet = Transport.Mock.recv(socket)
+    {:ok, perm_req} = ExSTUN.Message.decode(packet)
+    assert perm_req.type.method == :create_permission
+
+    perm_resp =
+      Message.new(
+        perm_req.transaction_id,
+        %Type{class: :success_response, method: :create_permission},
+        []
+      )
+      |> Message.with_integrity(Message.lt_key(@turn_username, @turn_password, @turn_realm))
+      |> Message.encode()
+
+    ice_agent = ICEAgent.handle_udp(ice_agent, socket, @turn_ip, @turn_port, perm_resp)
+
+    # the binding request (wrapped in a TURN Send indication) and the
+    # parallel channel-bind request both egress on the socket
+    assert send_indication = Transport.Mock.recv(socket)
+    {:ok, send_msg} = ExSTUN.Message.decode(send_indication)
+    assert send_msg.type.method == :send
+    {:ok, %Data{value: inner_req_data}} = Message.get_attribute(send_msg, Data)
+    {:ok, binding_req} = ExSTUN.Message.decode(inner_req_data)
+    assert binding_req.type.method == :binding
+
+    # discard the channel-bind request the client also fires
+    _channel_bind_req = Transport.Mock.recv(socket)
+
+    # build a binding-success response whose XOR-MAPPED address is a brand-new
+    # IP/port — not the relay's address, not any host candidate. This forces
+    # the prflx-creation branch in get_or_create_local_cand/3 to fire with a
+    # relay base, exercising the bug.
+    new_xor_ip = {198, 51, 100, 7}
+    new_xor_port = 9876
+
+    binding_resp =
+      Message.new(binding_req.transaction_id, %Type{class: :success_response, method: :binding}, [
+        %XORMappedAddress{address: new_xor_ip, port: new_xor_port}
+      ])
+      |> Message.with_integrity(ice_agent.remote_pwd)
+      |> Message.with_fingerprint()
+      |> Message.encode()
+
+    wrapped_resp =
+      Message.new(%Type{class: :indication, method: :data}, [
+        %Data{value: binding_resp},
+        %XORPeerAddress{address: remote_cand_ip, port: remote_cand_port}
+      ])
+      |> Message.encode()
+
+    # before the fix: this raises KeyError in Candidate.priority!/4 because
+    # the relay's base_address (TURN-allocated IP) is not in local_preferences
+    ice_agent = ICEAgent.handle_udp(ice_agent, socket, @turn_ip, @turn_port, wrapped_resp)
+
+    # a new prflx local candidate exists at the discovered XOR address
+    assert prflx_cand =
+             ice_agent.local_cands
+             |> Map.values()
+             |> Enum.find(&(&1.base.type == :prflx))
+
+    assert prflx_cand.base.address == new_xor_ip
+    assert prflx_cand.base.port == new_xor_port
+    assert prflx_cand.base.priority > 0
+  end
+
   defp connect(ice_agent) do
     [socket] = ice_agent.sockets
     [remote_cand] = Map.values(ice_agent.remote_cands)
