@@ -82,6 +82,29 @@ defmodule ExICE.Priv.ICEAgentTest do
   @remote_cand ExICE.Candidate.new(:host, address: {192, 168, 0, 2}, port: 8445, priority: 123)
   @remote_cand2 ExICE.Candidate.new(:host, address: {192, 168, 0, 3}, port: 8445, priority: 122)
 
+  test "keep_selected_pair option defaults to false and is stored when set" do
+    default_agent =
+      ICEAgent.new(
+        controlling_process: self(),
+        role: :controlling,
+        transport_module: Transport.Mock,
+        if_discovery_module: IfDiscovery.MockSingle
+      )
+
+    assert default_agent.keep_selected_pair == false
+
+    sticky_agent =
+      ICEAgent.new(
+        controlling_process: self(),
+        role: :controlling,
+        transport_module: Transport.Mock,
+        if_discovery_module: IfDiscovery.MockSingle,
+        keep_selected_pair: true
+      )
+
+    assert sticky_agent.keep_selected_pair == true
+  end
+
   describe "unmarshal_remote_candidate/1" do
     test "with correct candidate" do
       cand = "1 1 UDP 1686052863 127.0.0.1 57940 typ srflx raddr 0.0.0.0 rport 0"
