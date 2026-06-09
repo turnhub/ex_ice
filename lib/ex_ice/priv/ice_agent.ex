@@ -456,7 +456,7 @@ defmodule ExICE.Priv.ICEAgent do
         if ice_agent.selected_pair_id != nil do
           %CandidatePair{} = best_valid_pair = Checklist.get_valid_pair(ice_agent.checklist)
 
-          if best_valid_pair.id != ice_agent.selected_pair_id do
+          if not ice_agent.keep_selected_pair and best_valid_pair.id != ice_agent.selected_pair_id do
             Logger.debug("New best valid pair: #{best_valid_pair.id}. Selecting.")
 
             %__MODULE__{

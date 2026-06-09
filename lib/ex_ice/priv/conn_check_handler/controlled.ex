@@ -200,20 +200,29 @@ defmodule ExICE.Priv.ConnCheckHandler.Controlled do
       ice_agent.selected_pair_id != nil and pair.id != ice_agent.selected_pair_id ->
         selected_pair = Map.fetch!(ice_agent.checklist, ice_agent.selected_pair_id)
 
-        if pair.priority >= selected_pair.priority do
-          Logger.debug("""
-          Selecting new pair with higher priority. \
-          New pair: #{pair_id}, old pair: #{ice_agent.selected_pair_id}.\
-          """)
+        cond do
+          ice_agent.keep_selected_pair ->
+            Logger.debug(
+              "keep_selected_pair set; not switching from #{ice_agent.selected_pair_id} to #{pair_id}."
+            )
 
-          %ICEAgent{
             ice_agent
-            | selected_pair_id: pair.id,
-              selected_candidate_pair_changes: ice_agent.selected_candidate_pair_changes + 1
-          }
-        else
-          Logger.debug("Not selecting a new pair as it has lower priority.")
-          ice_agent
+
+          pair.priority >= selected_pair.priority ->
+            Logger.debug("""
+            Selecting new pair with higher priority. \
+            New pair: #{pair_id}, old pair: #{ice_agent.selected_pair_id}.\
+            """)
+
+            %ICEAgent{
+              ice_agent
+              | selected_pair_id: pair.id,
+                selected_candidate_pair_changes: ice_agent.selected_candidate_pair_changes + 1
+            }
+
+          true ->
+            Logger.debug("Not selecting a new pair as it has lower priority.")
+            ice_agent
         end
 
       true ->

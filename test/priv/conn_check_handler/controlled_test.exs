@@ -388,4 +388,38 @@ defmodule ExICE.Priv.ConnCheckHandler.ControlledTest do
       |> Message.with_fingerprint()
     end
   end
+
+  describe "update_nominated_flag/3 with keep_selected_pair" do
+    test "does not switch away from the selected pair" do
+      ice_agent =
+        ICEAgent.new(
+          controlling_process: self(),
+          role: :controlled,
+          transport_module: Transport.Mock,
+          if_discovery_module: IfDiscovery.Mock,
+          keep_selected_pair: true
+        )
+        |> ICEAgent.set_remote_credentials("someufrag", "somepwd")
+        |> ICEAgent.gather_candidates()
+        |> ICEAgent.add_remote_candidate(@remote_cand)
+        |> ICEAgent.add_remote_candidate(@remote_cand2)
+
+      [low_pair_id, high_pair_id] = Map.keys(ice_agent.checklist)
+
+      ice_agent = put_in(ice_agent.checklist[low_pair_id].priority, 100)
+      ice_agent = put_in(ice_agent.checklist[low_pair_id].state, :succeeded)
+      ice_agent = put_in(ice_agent.checklist[low_pair_id].valid?, true)
+      ice_agent = put_in(ice_agent.checklist[high_pair_id].priority, 200)
+      ice_agent = put_in(ice_agent.checklist[high_pair_id].state, :succeeded)
+      ice_agent = put_in(ice_agent.checklist[high_pair_id].valid?, true)
+      ice_agent = put_in(ice_agent.selected_pair_id, low_pair_id)
+
+      changes_before = ice_agent.selected_candidate_pair_changes
+
+      new_ice_agent = Controlled.update_nominated_flag(ice_agent, high_pair_id, true)
+
+      assert new_ice_agent.selected_pair_id == low_pair_id
+      assert new_ice_agent.selected_candidate_pair_changes == changes_before
+    end
+  end
 end
