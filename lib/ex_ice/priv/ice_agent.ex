@@ -59,6 +59,7 @@ defmodule ExICE.Priv.ICEAgent do
     :on_data,
     :on_new_candidate,
     :aggressive_nomination,
+    :keep_selected_pair,
     :if_discovery_module,
     :transport_module,
     :gatherer,
@@ -156,6 +157,7 @@ defmodule ExICE.Priv.ICEAgent do
       on_data: opts[:on_data] || controlling_process,
       on_new_candidate: opts[:on_new_candidate] || controlling_process,
       aggressive_nomination: Keyword.get(opts, :aggressive_nomination, false),
+      keep_selected_pair: Keyword.get(opts, :keep_selected_pair, false),
       if_discovery_module: if_discovery_module,
       transport_module: transport_module,
       gatherer: Gatherer.new(if_discovery_module, transport_module, ip_filter, ports),
@@ -454,7 +456,7 @@ defmodule ExICE.Priv.ICEAgent do
         if ice_agent.selected_pair_id != nil do
           %CandidatePair{} = best_valid_pair = Checklist.get_valid_pair(ice_agent.checklist)
 
-          if best_valid_pair.id != ice_agent.selected_pair_id do
+          if not ice_agent.keep_selected_pair and best_valid_pair.id != ice_agent.selected_pair_id do
             Logger.debug("New best valid pair: #{best_valid_pair.id}. Selecting.")
 
             %__MODULE__{

@@ -87,6 +87,9 @@ defmodule ExICE.ICEAgent do
   While this behavior is supported by most of the implementations, some of them still require
   a pair to be nominated by the controlling agent before they can start sending data.
   Defaults to false.
+  * `keep_selected_pair` - when `true`, once a candidate pair is selected the agent will
+  not switch to a higher-priority pair. Defaults to `false`. Useful when a mid-session path
+  change would break an in-progress upper-layer handshake (e.g. DTLS over a TURN relay).
   * `on_gathering_state_change` - where to send gathering state change notifications. Defaults to a process that spawns `ExICE`.
   * `on_connection_state_change` - where to send connection state change notifications. Defaults to a process that spawns `ExICE`.
   * `on_data` - where to send data. Defaults to a process that spawns `ExICE`.
@@ -110,6 +113,7 @@ defmodule ExICE.ICEAgent do
           ],
           ice_transport_policy: :all | :relay,
           aggressive_nomination: boolean(),
+          keep_selected_pair: boolean(),
           on_gathering_state_change: pid() | nil,
           on_connection_state_change: pid() | nil,
           on_data: pid() | nil,
