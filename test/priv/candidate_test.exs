@@ -90,4 +90,20 @@ defmodule ExICE.Priv.CandidateTest do
     assert prio_prflx_passive > prio_relay_udp
     assert prio_srflx_passive > prio_relay_udp
   end
+
+  test "priority!/4" do
+    base_addr = {192, 168, 0, 1}
+    {prefs, prio_host} = Candidate.priority(%{}, base_addr, :host, nil)
+
+    # For a registered base it matches priority/4 for the same base and type.
+    assert Candidate.priority!(prefs, base_addr, :host, nil) == prio_host
+
+    # Relay candidates (and peer-reflexive candidates discovered over a relay)
+    # have a base address that is never registered in local_preferences, which is
+    # keyed by the socket address. priority!/4 must generate a preference for it
+    # rather than raising (it previously used Map.fetch! and crashed the agent).
+    relay_base = {104, 30, 150, 172}
+    refute Map.has_key?(prefs, relay_base)
+    assert is_integer(Candidate.priority!(prefs, relay_base, :prflx, nil))
+  end
 end

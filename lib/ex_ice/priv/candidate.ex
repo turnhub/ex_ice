@@ -39,7 +39,13 @@ defmodule ExICE.Priv.Candidate do
         ) ::
           non_neg_integer()
   def priority!(local_preferences, base_address, type, tcp_type) do
-    other_preference = Map.fetch!(local_preferences, base_address)
+    # Relay candidates (and peer-reflexive candidates discovered over a relay)
+    # have a base address that is never registered in `local_preferences`, which
+    # is keyed by the socket address. Generate a preference for an unregistered
+    # base rather than raising, the same way `priority/4` does.
+    other_preference =
+      Map.get(local_preferences, base_address) || generate_other_preference(local_preferences)
+
     do_priority(other_preference, type, tcp_type)
   end
 
